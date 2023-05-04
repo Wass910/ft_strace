@@ -81,7 +81,7 @@ static char		*ft_write_min(char *str)
 	return (str);
 }
 
-char			*ft_itoa(unsigned long n)
+char			*ft_itoa(unsigned long n, int base)
 {
 	char	*alpha;
 	char	*str;
@@ -97,9 +97,9 @@ char			*ft_itoa(unsigned long n)
 		n = 4294967296 - (1 * n);
 	while (n > 0)
 	{
-		str[i] = alpha[n % 16];
+		str[i] = alpha[n % base];
 		i++;
-		n = n / 16;
+		n = n / base;
 	}
 	str[i] = '\0';
 	test = ft_strrev(str);

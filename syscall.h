@@ -17,7 +17,7 @@
 #include <stddef.h>
 #include <stdlib.h>
 
-char			*ft_itoa(unsigned long n);
+char			*ft_itoa(unsigned long n, int base);
 
 
 #endif
