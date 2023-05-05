@@ -626,7 +626,7 @@ void print_syscall_64(unsigned long sys, struct user_regs_struct regs, int pid)
 		}
 		i++;
 	}
-	if (sys == 0)
+	if (sys == SYS_restart_syscall)
 		printf("%s", "<... resuming interrupted nanosleep ...>");
 	if (g_syscall[sys].ret == 5){
 		char *str = ft_itoa(regs.rax, 16);
@@ -637,7 +637,7 @@ void print_syscall_64(unsigned long sys, struct user_regs_struct regs, int pid)
 		if (regs.orig_rax == SYS_write)
 			printf(") = %llu\n", regs.rdx);
 		else
-			printf(") = %d\n", (int)regs.rax);
+			printf(") = %d\n", (int)regs.rax );
 	}
 	return ;
     
@@ -720,7 +720,7 @@ void print_syscall_32(unsigned long sys, t_regs_32 regs, int pid)
 		}
 		i++;
 	}
-	if (sys == SYS_restart_syscall)
+	if (sys == 0)
 		printf("%s", "<... resuming interrupted nanosleep ...>");
 	if (g_syscall[count].ret == 5){
 		char *str = ft_itoa(regs.eax, 16);
@@ -736,7 +736,7 @@ void print_syscall_32(unsigned long sys, t_regs_32 regs, int pid)
 	return ;
 }
 
-int main(int argc, char *argv[]) {
+int main(int argc, char *argv[], char **env) {
     pid_t pid;
     int status;
     struct user_regs_struct regs;
@@ -749,6 +749,24 @@ int main(int argc, char *argv[]) {
         return 1;
     }
 
+	int taille_totale = 0;
+    for (int i = 1; i < argc; i++) {
+        taille_totale += strlen(argv[i]) + 1;
+    }
+
+    // Allouer de la mémoire pour la chaîne
+    char* chaine = (char*) malloc(sizeof(char) * taille_totale + 100);
+    chaine[0] = '\0';
+	strcat(chaine, "[");
+    // Concaténer les arguments dans la chaîne
+    for (int i = 1; i < argc; i++) {
+		strcat(chaine, "\"");
+        strcat(chaine, argv[i]);
+        strcat(chaine, "\", ");
+    }
+	chaine[strlen(chaine) - 2] = ']';
+    // Supprimer l'espace final
+    chaine[strlen(chaine) - 1] = '\0';
 	const char *binary_path = argv[1];
 
     FILE *fp = fopen(binary_path, "rb");
@@ -766,25 +784,29 @@ int main(int argc, char *argv[]) {
     }
 
     int bits = 0;
-    if (elf_header.e_ident[EI_CLASS] == ELFCLASS32) {
-        printf("Le binaire est en 32 bits.\n");
+    if (elf_header.e_ident[EI_CLASS] == ELFCLASS32)
         bits = 32;
-    } else if (elf_header.e_ident[EI_CLASS] == ELFCLASS64) {
-        printf("Le binaire est en 64 bits.\n");
+    else if (elf_header.e_ident[EI_CLASS] == ELFCLASS64) 
         bits = 64;
-    } else {
+    else {
         fprintf(stderr, "Binaire incompatible avec la machine actuelle.\n");
         fclose(fp);
         return 1;
     }
 
-	//return 0;
     pid = fork();
     if (pid == 0) {
         ptrace(PTRACE_TRACEME, 0, NULL, NULL);
-		printf("salut toi\n");
-        execvp(argv[1], argv + 1);
-        perror("execvp");
+		char *str = NULL;
+		if (bits == 32)
+			str = ft_itoa(regs_32.edx, 16);
+		else
+			str = ft_itoa(regs.rdx, 16);
+		printf("execve(\"%s\", %s,  0x%s /* 30 vars */) = 0\n", argv[1], chaine, str);
+        execve(argv[1], argv + 1, env);
+        perror("execve");
+		free(str);
+		free(chaine);
         exit(1);
     } else if (pid < 0) {
         perror("fork");
@@ -794,6 +816,8 @@ int main(int argc, char *argv[]) {
     if (WIFEXITED(status)) {
         return 0;
     }
+	if (bits == 32)
+		printf("strace: [ Process PID=%d runs in 32 bit mode. ]\n", pid);
     while (1) {
         ptrace(PTRACE_SYSCALL, pid, NULL, NULL);
         waitpid(pid, &status, 0);
@@ -833,6 +857,6 @@ int main(int argc, char *argv[]) {
         i++;
     }
 	printf("exit_group(0) = ?\n+++ exited with 0 +++\n");
-
+	free(chaine);
     return 0;
 }
