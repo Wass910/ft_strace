@@ -458,7 +458,7 @@ void print_user_regs_struct(struct user_regs_struct regs) {
 void print_read_args(pid_t pid, struct user_regs_struct regs) {
     int i;
     long data;
-    char buf[1024];
+    char buf[4096];
     size_t nread;
     if (regs.rdx <= sizeof(buf)) {
         nread = regs.rdx;
@@ -466,40 +466,42 @@ void print_read_args(pid_t pid, struct user_regs_struct regs) {
         nread = sizeof(buf);
     }
     memset(buf, 0, sizeof(buf));
-    for (i = 0; i < nread; i += sizeof(long)) {
-        data = ptrace(PTRACE_PEEKDATA, pid, regs.rsi + i, NULL);
-        if (data == -1) {
-            perror("ptrace");
-            return;
-        }
-        memcpy(buf + i, &data, sizeof(long));
-    }
+    i = 0;
+	do {
+		data = ptrace(PTRACE_PEEKDATA, pid, regs.rsi + i, NULL);
+		if (data == -1) {
+			perror("ptrace");
+			return;
+		}
+		memcpy(buf + i, &data, sizeof(long));
+		i += sizeof(long);
+	} while (i < sizeof(buf) && *(buf + i - 1) != '\0');
     printf("\"%s\"", buf);
 }
 
 
-char *get_file_path(int fd) {
-    char *buf = (char *)malloc(1024);
-    int len;
+char* get_file_path(int fd) {
+    char path[256];
+    char* result = NULL;
+    int ret;
 
-    if (buf == NULL) {
+    ret = fcntl(3, 50, path);
+
+    if (ret == -1) {
+        perror("fcntl");
+        return NULL;
+    }
+
+    result = malloc(sizeof(char) * (ret + 1));
+
+    if (result == NULL) {
         perror("malloc");
         return NULL;
     }
 
-    sprintf(buf, "/proc/self/fd/%d", fd);
+    snprintf(result, ret + 1, "%s", path);
 
-    len = readlink(buf, buf, 1023);
-
-    if (len == -1) {
-        perror("readlink");
-        free(buf);
-        return NULL;
-    }
-
-    buf[len] = '\0';
-
-    return buf;
+    return result;
 }
 
 char *get_library_path(int fd) {
@@ -590,9 +592,6 @@ void print_syscall(unsigned long sys, struct user_regs_struct regs, int pid)
 				printf("\"%s\"", buf);
 				e = 0;
 			}
-			else if (sys == SYS_openat){
-				print_read_args(pid, regs);
-			}
 			else{
 				print_read_args(pid, regs);
 			}
@@ -613,12 +612,6 @@ void print_syscall(unsigned long sys, struct user_regs_struct regs, int pid)
 				} while (data && e < sizeof(buf));
 				printf("\"%s\"", buf);
 				e = 0;
-			}
-			else if (sys == SYS_openat){
-				char *path = get_file_path((int)arg_registre[i]);
-
-                printf("rs = %s\n", path);
-                free(path);
 			}
 			else{
 				print_read_args(pid, regs);
