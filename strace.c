@@ -1,23 +1,5 @@
 #include "syscall.h"
 
-
-#define TNONE 0
-#define TINT 1
-#define TUINT 2
-#define TSTR 3
-#define TLSTR 4
-#define TPTR 5
-
-
-typedef struct			s_syscall
-{
-	int						code64;
-	int						code32;
-	char					*name;
-	int						arg[6];
-	int						ret;
-}						t_syscall;
-
 static const t_syscall	g_syscall[] =
 {
 	{ 0, 3, "read", {TINT, TSTR, TUINT, TNONE, TNONE, TNONE}, TINT},
@@ -425,6 +407,73 @@ static const t_syscall	g_syscall[] =
 	{ -1, -1, NULL, {TNONE, TNONE, TNONE, TNONE, TNONE, TNONE}, TNONE}
 };
 
+static const t_sig	g_sig[] =
+{
+	{ 1, "SIGHUP"},
+	{ 2, "SIGINT"},
+	{ 3, "SIGQUIT"},
+	{ 4, "SIGILL"},
+	{ 5, "SIGTRAP"},
+	{ 6, "SIGABRT"},
+	{ 7, "SIGBUS"},
+	{ 8, "SIGFPE"},
+	{ 9, "SIGKILL"},
+	{ 10, "SIGUSR1"},
+	{ 11, "SIGSEGV"},
+	{ 12, "SIGUSR2"},
+	{ 13, "SIGPIPE"},
+	{ 14, "SIGALRM"},
+	{ 15, "SIGTERM"},
+	{ 16, "SIGSTKFLT"},
+	{ 17, "SIGCHLD"},
+	{ 18, "SIGCONT"},
+	{ 19, "SIGSTOP"},
+	{ 20, "SIGTSTP"},
+	{ 21, "SIGTTIN"},
+	{ 22, "SIGTTOU"},
+	{ 23, "SIGURG"},
+	{ 24, "SIGXCPU"},
+	{ 25, "SIGXFSZ"},
+	{ 26, "SIGVTALRM"},
+	{ 27, "SIGPROF"},
+	{ 28, "SIGWINCH"},
+	{ 29, "SIGIO"},
+	{ 30, "SIGPWR"},
+	{ 31, "SIGSYS"},
+	{ 34, "SIGRTMIN"},
+	{ 35, "SIGRTMIN+1"},
+	{ 36, "SIGRTMIN+2"},
+	{ 37, "SIGRTMIN+3"},
+	{ 38, "SIGRTMIN+4"},
+	{ 39, "SIGRTMIN+5"},
+	{ 40, "SIGRTMIN+6"},
+	{ 41, "SIGRTMIN+7"},
+	{ 42, "SIGRTMIN+8"},
+	{ 43, "SIGRTMIN+9"},
+	{ 44, "SIGRTMIN+10"},
+	{ 45, "SIGRTMIN+11"},
+	{ 46, "SIGRTMIN+12"},
+	{ 47, "SIGRTMIN+13"},
+	{ 48, "SIGRTMIN+14"},
+	{ 49, "SIGRTMIN+15"},
+	{ 50, "SIGRTMAX-14"},
+	{ 51, "SIGRTMAX-13"},
+	{ 52, "SIGRTMAX-12"},
+	{ 53, "SIGRTMAX-11"},
+	{ 54, "SIGRTMAX-10"},
+	{ 55, "SIGRTMAX-9"},
+	{ 56, "SIGRTMAX-8"},
+	{ 57, "SIGRTMAX-7"},
+	{ 58, "SIGRTMAX-6"},
+	{ 59, "SIGRTMAX-5"},
+	{ 60, "SIGRTMAX-4"},
+	{ 61, "SIGRTMAX-3"},
+	{ 62, "SIGRTMAX-2"},
+	{ 63, "SIGRTMAX-1"},
+	{ 64, "SIGRTMAX"},
+	{ 65, NULL}
+};
+
 void print_user_regs_struct(struct user_regs_struct regs) {
     printf("r15: %llu\n", regs.r15);
     printf("r14: %llu\n", regs.r14);
@@ -479,84 +528,35 @@ void print_read_args(pid_t pid, struct user_regs_struct regs) {
     printf("\"%s\"", buf);
 }
 
-
-char* get_file_path(int fd) {
-    char path[256];
-    char* result = NULL;
-    int ret;
-
-    ret = fcntl(3, 50, path);
-
-    if (ret == -1) {
-        perror("fcntl");
-        return NULL;
+void print_read_args_32(pid_t pid, t_regs_32 regs) {
+    int i;
+    long data;
+    char buf[4096];
+    size_t nread;
+    if (regs.edx <= sizeof(buf)) {
+        nread = regs.edx;
+    } else {
+        nread = sizeof(buf);
     }
-
-    result = malloc(sizeof(char) * (ret + 1));
-
-    if (result == NULL) {
-        perror("malloc");
-        return NULL;
-    }
-
-    snprintf(result, ret + 1, "%s", path);
-
-    return result;
+    memset(buf, 0, sizeof(buf));
+    i = 0;
+	do {
+		data = ptrace(PTRACE_PEEKDATA, pid, regs.ecx + i, NULL);
+		if (data == -1) {
+			perror("ptrace");
+			return;
+		}
+		memcpy(buf + i, &data, sizeof(long));
+		i += sizeof(long);
+	} while (i < sizeof(buf) && *(buf + i - 1) != '\0');
+    printf("\"%s\"", buf);
 }
 
-char *get_library_path(int fd) {
-    char *buf = (char *)malloc(1024);
-    FILE *f;
-    char *line = NULL;
-    size_t len = 0;
-    ssize_t read;
-    int found = 0;
 
-    if (buf == NULL) {
-        perror("malloc");
-        return NULL;
-    }
-
-    /* Get the path of the file */
-    char *path = get_file_path(fd);
-    if (path == NULL) {
-        free(buf);
-        return NULL;
-    }
-
-    /* Open /proc/self/maps */
-    f = fopen("/proc/self/maps", "r");
-    if (f == NULL) {
-        perror("fopen");
-        free(path);
-        free(buf);
-        return NULL;
-    }
-
-    /* Search for the library */
-    while ((read = getline(&line, &len, f)) != -1) {
-        if (strstr(line, path) != NULL) {
-            sscanf(line, "%lx-%lx %*s %*s %*s %*d %s", (long unsigned int *)&buf, (long unsigned int *)&buf, buf);
-            found = 1;
-            break;
-        }
-    }
-
-    /* Clean up */
-    free(line);
-    free(path);
-    fclose(f);
-
-    if (!found) {
-        free(buf);
-        return NULL;
-    }
-
-    return buf;
-}
-
-void print_syscall(unsigned long sys, struct user_regs_struct regs, int pid)
+void print_syscall_64(unsigned long sys, struct user_regs_struct regs, int pid)
 {
+	if (strncmp("exit_group", g_syscall[sys].name, 10) == 0)
+		return ;
 	printf("%s(", g_syscall[sys].name );
 	int i = 0;
 	int e = 0;
@@ -626,21 +626,114 @@ void print_syscall(unsigned long sys, struct user_regs_struct regs, int pid)
 		}
 		i++;
 	}
+	if (sys == 0)
+		printf("%s", "<... resuming interrupted nanosleep ...>");
 	if (g_syscall[sys].ret == 5){
 		char *str = ft_itoa(regs.rax, 16);
 		printf(") = 0x%s\n", str);
 		free(str);
 	}
 	else{
-		printf(") = %lld\n", regs.rax);
+		if (regs.orig_rax == SYS_write)
+			printf(") = %llu\n", regs.rdx);
+		else
+			printf(") = %d\n", (int)regs.rax);
 	}
 	return ;
+    
 }
 
-void	catch_sigint(int signal)
+
+void print_syscall_32(unsigned long sys, t_regs_32 regs, int pid)
 {
-	printf("stop\n");
-	exit(1);
+    int count = 0;
+    while (g_syscall[count].code32 != sys)
+        count++;
+	if (strncmp("exit_group", g_syscall[count].name, 10) == 0)
+		return ;
+	printf("%s(", g_syscall[count].name );
+	int i = 0;
+	int e = 0;
+	char buf[100000];
+	long data = 0;
+	long long arg_registre[6] = {regs.ebx, regs.ecx, regs.edx, regs.esi, regs.edi, regs.ebp};
+
+	while (i < 6){
+		if (g_syscall[count].arg[i] != 0 && i > 0)
+			printf(", ");
+		if (g_syscall[count].arg[i] == 1)
+		{
+			printf("%d", (int)arg_registre[i]);
+		}
+		if (g_syscall[count].arg[i] == 2)
+		{
+			printf("%u", (unsigned int)arg_registre[i]);
+		}
+		if (g_syscall[count].arg[i] == 3 )
+		{
+			if (sys == 33)
+			{
+				do 
+				{
+					data = ptrace(PTRACE_PEEKDATA, pid, (void *)(uintptr_t)regs.ebx + e, NULL);
+					if (data == -1) {
+						perror("ptrace");
+						return ;
+					}
+					buf[e] = data;
+					e++;
+				} while (data && e < sizeof(buf));
+				printf("\"%s\"", buf);
+				e = 0;
+			}
+			else{
+				print_read_args_32(pid, regs);
+			}
+		}
+		if (g_syscall[count].arg[i] == 4)
+		{
+			if (sys == 33)
+			{
+				do 
+				{
+					data = ptrace(PTRACE_PEEKDATA, pid, (void *)(uintptr_t)regs.ebx + e, NULL);
+					if (data == -1) {
+						perror("ptrace");
+						return ;
+					}
+					buf[e] = data;
+					e++;
+				} while (data && e < sizeof(buf));
+				printf("\"%s\"", buf);
+				e = 0;
+			}
+			else{
+				print_read_args_32(pid, regs);
+			}
+		}
+		if (g_syscall[count].arg[i] == 5)
+		{
+			if ((void *)arg_registre[i] == NULL)
+				printf("NULL");
+			else
+				printf("%p", (void *)arg_registre[i]);
+		}
+		i++;
+	}
+	if (sys == SYS_restart_syscall)
+		printf("%s", "<... resuming interrupted nanosleep ...>");
+	if (g_syscall[count].ret == 5){
+		char *str = ft_itoa(regs.eax, 16);
+		printf(") = 0x%s\n", str);
+		free(str);
+	}
+	else{
+		if (sys == 4)
+			printf(") = %u\n", regs.edx);
+		else
+			printf(") = %d\n", (int)regs.eax);
+	}
+	return ;
 }
 
 int main(int argc, char *argv[]) {
@@ -648,16 +741,48 @@ int main(int argc, char *argv[]) {
     int status;
     struct user_regs_struct regs;
     int i = 0;
-	char buf[4096];
+	struct iovec iov;
+	t_regs_32 regs_32;
+
     if (argc < 2) {
         fprintf(stderr, "Usage: %s <program>\n", argv[0]);
         return 1;
     }
 
-	
+	const char *binary_path = argv[1];
+
+    FILE *fp = fopen(binary_path, "rb");
+    if (!fp) {
+        fprintf(stderr, "Impossible d'ouvrir le fichier binaire %s.\n", binary_path);
+        return 1;
+    }
+
+    // Lecture de l'en-tête ELF pour déterminer si le binaire est en 32 bits ou en 64 bits
+    Elf64_Ehdr elf_header;
+    if (fread(&elf_header, sizeof(elf_header), 1, fp) != 1) {
+        fprintf(stderr, "Erreur de lecture de l'en-tête ELF.\n");
+        fclose(fp);
+        return 1;
+    }
+
+    int bits = 0;
+    if (elf_header.e_ident[EI_CLASS] == ELFCLASS32) {
+        printf("Le binaire est en 32 bits.\n");
+        bits = 32;
+    } else if (elf_header.e_ident[EI_CLASS] == ELFCLASS64) {
+        printf("Le binaire est en 64 bits.\n");
+        bits = 64;
+    } else {
+        fprintf(stderr, "Binaire incompatible avec la machine actuelle.\n");
+        fclose(fp);
+        return 1;
+    }
+
+	//return 0;
     pid = fork();
     if (pid == 0) {
         ptrace(PTRACE_TRACEME, 0, NULL, NULL);
+		printf("salut toi\n");
         execvp(argv[1], argv + 1);
         perror("execvp");
         exit(1);
@@ -665,89 +790,49 @@ int main(int argc, char *argv[]) {
         perror("fork");
         exit(1);
     }
-
     waitpid(pid, &status, 0);
     if (WIFEXITED(status)) {
         return 0;
     }
-
     while (1) {
         ptrace(PTRACE_SYSCALL, pid, NULL, NULL);
         waitpid(pid, &status, 0);
-
         if (WIFEXITED(status)) {
             break;
         }
+		if (WIFSTOPPED(status)) {
+            int sig = WSTOPSIG(status);
+            //printf("Signal %d reçu\n", sig);
 
-        ptrace(PTRACE_GETREGS, pid, NULL, &regs);
-		char buffer[1024] = {0};
-		
-        if (i % 2 != 0){
-            //char *str = ft_itoa(regs.rax, 16);
-            //if (regs.rax > __INT_MAX__){
-				
-			    //printf("%s() = 0x%s\n", g_syscall[regs.orig_rax].name, str );
-				// printf("%s(", g_syscall[regs.orig_rax].name );
-				// if (g_syscall[regs.orig_rax].arg1 == TARG)
-				// {
-				// 	printf("%lld,", arg1);
-				// }
-				// if (g_syscall[regs.orig_rax].arg2 == TARG)
-				// {
-				// 	printf("%s) = 0x%s\n", ft_itoa(arg2, 10), str);
-				// }
-				//print_user_regs_struct(regs);
-				print_syscall(regs.orig_rax, regs, pid);
-			
-			// }
-            // else{
-				// if (regs.orig_rax == SYS_brk)
-                // 	printf("%s() = 0x%llu\n", g_syscall[regs.orig_rax].name, regs.rax );
-				// else
-				// 	printf("%s() = %llu\n", g_syscall[regs.orig_rax].name, regs.rax );
-				//print_syscall(regs.orig_rax, regs, pid);
+            siginfo_t siginfo;
+            if (ptrace(PTRACE_GETSIGINFO, pid, NULL, &siginfo) < 0) {
+                perror("ptrace GETSIGINFO");
+                exit(1);
+            }
+            if (sig != 5)
+                printf("--- %s {si_signo = %s, si_code = %d, si_pid = %d, si_uid = %d, si_status = %d, si_utime = %ld, si_stime = %ld} ---\n",
+                    g_sig[sig - 1].name, g_sig[sig - 1].name, siginfo.si_code, siginfo.si_pid, siginfo.si_uid, siginfo.si_status, siginfo.si_utime, siginfo.si_stime);
 
-				//print_user_regs_struct(regs);
-			// }
-            // free(str);
-			// long long arg1 = regs.rdi;
-			// long long arg2 = regs.rsi;
-			// long long arg3 = regs.rdx;
-			// long long arg4 = regs.r10;
-			// long long arg5 = regs.r8;
-			// long long arg6 = regs.r9;
-			// int i = 0;
-			// long data = 0;
-			
-			// if (regs.orig_rax == SYS_access){
-			// 	printf("syscall: %lld, arg1: %c, arg2: %llx, arg3: %llx, arg4: %llx, arg5: %llx, arg6: %llx\n",
-            // regs.orig_rax, (char)regs.rdi + 4 , arg2, arg3, arg4, arg5, arg6);
-			// 	do {
-			// 		data = ptrace(PTRACE_PEEKDATA, pid, (void *)regs.rdi + i, NULL);
-			// 		if (data == -1) {
-			// 			perror("ptrace");
-			// 			return 1;
-			// 		}
-			// 		buf[i] = data;
-			// 		i++;
-			// 	} while (data && i < sizeof(buf));
-
-			// 	/* Afficher la chaîne de caractères lue */
-			// 	printf("String at address %p: %s\n", (void *)regs.rdi, buf);
-
-			//}
-			//printf("%s() = %llu\n", g_syscall[regs.orig_rax].name, regs.rax );
+            
+        }
+        if (bits == 64)
+            ptrace(PTRACE_GETREGS, pid, NULL, &regs);
+        else
+        {
+			iov.iov_base = &regs_32;
+            iov.iov_len = sizeof(regs_32);
+            ptrace(PTRACE_GETREGSET, pid, 1, &iov);
 		}
+        if (i % 2 != 0)
+        {
+            if (bits == 64)
+			    print_syscall_64(regs.orig_rax, regs, pid);
+            else
+			    print_syscall_32(regs_32.orig_eax, regs_32, pid);
+        }
         i++;
-		
-		
-        //printf("%s() = %llu\n", g_syscall[regs.orig_rax].name, regs.rax );
-        // if (regs.orig_rax == SYS_openat)
-        //     print_user_regs_struct(regs);
     }
-
-    //ptrace(PTRACE_CONT, pid, NULL, NULL);
-    //waitpid(pid, &status, 0);
+	printf("exit_group(0) = ?\n+++ exited with 0 +++\n");
 
     return 0;
 }
