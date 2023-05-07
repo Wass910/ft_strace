@@ -497,7 +497,9 @@ void print_read_args(pid_t pid, struct user_regs_struct regs) {
 		memcpy(buf + i, &data, sizeof(long));
 		i += sizeof(long);
 	} while (i < sizeof(buf) && *(buf + i - 1) != '\0');
-    printf("\"%s\"", buf);
+    if (strncmp(g_summary->name, "/bin/bash", strlen("/bin/bash")) == 1)
+		printf("\"%s\"", buf);
+		
 }
 
 void print_read_args_32(pid_t pid, t_regs_32 regs) {
@@ -679,7 +681,7 @@ void print_syscall_64(unsigned long sys, struct user_regs_struct regs, int pid)
 	gettimeofday(&end, NULL);
     long long elapsed_time = time_in_microseconds(start, end);
     //printf("Le temps écoulé est de %lld microsecondes.\n", elapsed_time);
-	if ((int)regs.rax < 0)
+	if (g_syscall[sys].ret != 5 && (int)regs.rax < 0)
 	{
 		if (check_summary(sys, 1) == 1)
 		{
@@ -919,6 +921,7 @@ int main(int argc, char *argv[], char **env) {
 	g_summary->error = 0;
 	g_summary->syscall = 0;
 	g_summary->usecond = 0;
+	g_summary->name = argv[1];
 	g_summary->next = NULL;
     pid = fork();
     if (pid == 0) {
@@ -943,9 +946,21 @@ int main(int argc, char *argv[], char **env) {
     }
 	if (pid > 0)
 	{
+		sigset_t				new;
+		sigset_t				old;
+		sigemptyset(&new);
+		sigaddset(&new, SIGHUP);
+		sigaddset(&new, SIGINT);
+		sigaddset(&new, SIGQUIT);
+		sigaddset(&new, SIGPIPE);
+		sigaddset(&new, SIGTERM);
 		ptrace(PTRACE_SEIZE, pid, NULL, NULL);
 		ptrace(PTRACE_INTERRUPT, pid, NULL, NULL);
+		if (sigprocmask(SIG_SETMASK, &old, NULL))
+		perror("sigprocmask SETMASK");
 		waitpid(pid, &status, 0);
+		if (sigprocmask(SIG_BLOCK, &new, NULL))
+			perror("sigprocmask BLOCK");
 		if (WIFEXITED(status)) {
 			return 0;
 		}
@@ -994,7 +1009,7 @@ int main(int argc, char *argv[], char **env) {
 	free(chaine);
 	double time_total;
 	time_total = calc_time();
-	print_summarry(time_total);
+	//print_summarry(time_total);
 	free_summary();
 	fclose(fp);
     return 0;
