@@ -474,35 +474,7 @@ static const t_sig	g_sig[] =
 	{ 65, NULL}
 };
 
-void print_user_regs_struct(struct user_regs_struct regs) {
-    printf("r15: %llu\n", regs.r15);
-    printf("r14: %llu\n", regs.r14);
-    printf("r13: %llu\n", regs.r13);
-    // printf("r12: %llu\n", regs.r12);
-    // printf("rbp: %llu\n", regs.rbp);
-    // printf("rbx: %llu\n", regs.rbx);
-    // printf("r11: %llu\n", regs.r11);
-    // printf("r10: %llu\n", regs.r10);
-    // printf("r9: %llu\n", regs.r9);
-    // printf("r8: %llu\n", regs.r8);
-    // printf("rax: %llu\n", regs.rax);
-    // printf("rcx: %llu\n", regs.rcx);
-    // printf("rdx: %llu\n", regs.rdx);
-    // printf("rsi: %llu\n", regs.rsi);
-    printf("rdi: %llu\n", regs.rdi);
-    // printf("orig_rax: %llu\n", regs.orig_rax);
-    // printf("rip: %llu\n", regs.rip);
-    // printf("cs: %llu\n", regs.cs);
-    // printf("eflags: %llu\n", regs.eflags);
-    // printf("rsp: %llu\n", regs.rsp);
-    // printf("ss: %llu\n", regs.ss);
-    // printf("fs_base: %llu\n", regs.fs_base);
-    // printf("gs_base: %llu\n", regs.gs_base);
-    // printf("ds: %llu\n", regs.ds);
-    // printf("es: %llu\n", regs.es);
-    // printf("fs: %llu\n", regs.fs);
-    // printf("gs: %llu\n", regs.gs);
-}
+t_summary *g_summary ;
 
 void print_read_args(pid_t pid, struct user_regs_struct regs) {
     int i;
@@ -552,10 +524,75 @@ void print_read_args_32(pid_t pid, t_regs_32 regs) {
     printf("\"%s\"", buf);
 }
 
+double calc_pourcent(double valeur, double total) {
+    double pourcentage = (valeur / total) * 100;
+    return pourcentage;
+}
+
+void	ft_lstadd_back(t_summary **alst, t_summary *new)
+{
+	t_summary	*lst;
+
+	lst = *alst;
+	if (*alst == NULL)
+		*alst = new;
+	else
+	{
+		while (lst->next)
+			lst = lst->next;
+		lst->next = new;
+	}
+}
+
+t_summary	*ft_fill_summary(int nb, int error, int sys, long long time)
+{
+	t_summary	*lst = malloc(sizeof(t_summary));
+
+	lst->arch = 0;
+	lst->number_of_calls = nb;
+	lst->error = error;
+	lst->syscall =sys;
+	lst->usecond = time;
+	lst->next = NULL;
+	return lst;
+}
+
+int	check_summary(int sys, int error)
+{
+	t_summary *tmp = g_summary;
+	int i = 0;
+	while(tmp)
+	{
+		if (tmp->syscall == sys){
+			tmp->number_of_calls++;
+			tmp->error = tmp->error + 1;
+			return 1;
+		}
+		tmp = tmp->next;
+		i++;
+	}
+	return 0;
+}
+
+long long time_in_microseconds(struct timeval start_time, struct timeval end_time) {
+    long long start_in_microseconds = start_time.tv_sec * 1000000LL + start_time.tv_usec;
+    long long end_in_microseconds = end_time.tv_sec * 1000000LL + end_time.tv_usec;
+    return end_in_microseconds - start_in_microseconds;
+}
+
+double microseconds_to_seconds(long long microseconds) {
+    return (double)microseconds / 1000000.0;
+}
 
 void print_syscall_64(unsigned long sys, struct user_regs_struct regs, int pid)
 {
+	struct timeval start, end;
+    gettimeofday(&start, NULL);
+
+    // Effectuer des opérations ici...
 	if (strncmp("exit_group", g_syscall[sys].name, 10) == 0)
+		return ;
+	if (sys == 59 )
 		return ;
 	printf("%s(", g_syscall[sys].name );
 	int i = 0;
@@ -639,6 +676,29 @@ void print_syscall_64(unsigned long sys, struct user_regs_struct regs, int pid)
 		else
 			printf(") = %d\n", (int)regs.rax );
 	}
+	gettimeofday(&end, NULL);
+    long long elapsed_time = time_in_microseconds(start, end);
+    //printf("Le temps écoulé est de %lld microsecondes.\n", elapsed_time);
+	if ((int)regs.rax < 0)
+	{
+		if (check_summary(sys, 1) == 1)
+		{
+			return;
+		}
+		else
+			ft_lstadd_back(&g_summary, ft_fill_summary(1, 1, sys , elapsed_time));
+
+	}
+	else
+	{
+		if (check_summary(sys, 0) == 1)
+		{
+			return ;
+		}
+		else
+			ft_lstadd_back(&g_summary, ft_fill_summary(1, 0, sys, elapsed_time));
+
+	}
 	return ;
     
 }
@@ -646,8 +706,10 @@ void print_syscall_64(unsigned long sys, struct user_regs_struct regs, int pid)
 
 void print_syscall_32(unsigned long sys, t_regs_32 regs, int pid)
 {
+	if (sys == 11 )
+		return ;
     int count = 0;
-    while (g_syscall[count].code32 != sys)
+    while (g_syscall[count].code32 && g_syscall[count].code32 != sys )
         count++;
 	if (strncmp("exit_group", g_syscall[count].name, 10) == 0)
 		return ;
@@ -736,6 +798,64 @@ void print_syscall_32(unsigned long sys, t_regs_32 regs, int pid)
 	return ;
 }
 
+
+double	calc_time()
+{
+	t_summary *tmp = g_summary;
+	int i = 0;
+	double time_total = 0;
+	while(tmp)
+	{
+		tmp->seconds = microseconds_to_seconds(tmp->usecond) * tmp->number_of_calls ;
+		time_total = time_total + tmp->seconds;
+		tmp = tmp->next;
+		i++;
+	}
+	return time_total;
+}
+
+void print_summarry(double time)
+{
+	printf("%% time     seconds  usecs/call     calls    errors syscall\n------- ----------- ----------- --------- --------- ----------------\n");
+	t_summary *tmp = g_summary;
+	tmp = tmp->next;
+	int syscall_total = 1;
+	int error_total = 0;
+	while(tmp)
+	{
+		printf("%5.2f", calc_pourcent(tmp->seconds, time));
+		printf("%14.6f", tmp->seconds);
+		printf("%11lld", tmp->usecond);
+		printf("%11d", tmp->number_of_calls);
+		if (tmp->error == 0)
+			printf("          ");
+		else
+			printf("%10d", tmp->error);
+		printf(" %d\n", tmp->syscall);
+		syscall_total = syscall_total + tmp->number_of_calls;
+		error_total = error_total + tmp->error;
+		tmp = tmp->next;
+	}
+	printf("------- ----------- ----------- --------- --------- ----------------\n");
+	printf("100.00    %9.6f                    %2d%10d total\n", time, syscall_total, error_total);
+	return;
+}
+
+void free_summary()
+{
+	t_summary	*temp;
+	while(g_summary->next)
+	{
+		temp = g_summary;
+		g_summary = g_summary->next;
+		free(temp);
+	}
+	free(g_summary);
+	return ;
+}
+
+
+
 int main(int argc, char *argv[], char **env) {
     pid_t pid;
     int status;
@@ -793,70 +913,89 @@ int main(int argc, char *argv[], char **env) {
         fclose(fp);
         return 1;
     }
-
+	g_summary = malloc(sizeof(t_summary));
+	g_summary->arch = bits;
+	g_summary->number_of_calls = 0;
+	g_summary->error = 0;
+	g_summary->syscall = 0;
+	g_summary->usecond = 0;
+	g_summary->next = NULL;
     pid = fork();
     if (pid == 0) {
-        ptrace(PTRACE_TRACEME, 0, NULL, NULL);
-		char *str = NULL;
-		if (bits == 32)
-			str = ft_itoa(regs_32.edx, 16);
-		else
-			str = ft_itoa(regs.rdx, 16);
-		printf("execve(\"%s\", %s,  0x%s /* 30 vars */) = 0\n", argv[1], chaine, str);
-        execve(argv[1], argv + 1, env);
-        perror("execve");
-		free(str);
-		free(chaine);
+        //ptrace(PTRACE_TRACEME, 0, NULL, NULL);
+		// char *str = NULL;
+		// if (bits == 32)
+		// 	str = ft_itoa(regs_32.edx, 16);
+		// else
+		// 	str = ft_itoa(regs.rdx, 16);
+		// printf("execve(\"%s\", %s,  0x%s /* 30 vars */) = 0\n", argv[1], chaine, str);
+        // execve(argv[1], argv + 1, env);
+		execve(argv[1], argv + 1, env);
+		perror("execve");
+		
+        
+		//free(str);
+		//free(chaine);
         exit(1);
     } else if (pid < 0) {
         perror("fork");
         exit(1);
     }
-    waitpid(pid, &status, 0);
-    if (WIFEXITED(status)) {
-        return 0;
-    }
-	if (bits == 32)
-		printf("strace: [ Process PID=%d runs in 32 bit mode. ]\n", pid);
-    while (1) {
-        ptrace(PTRACE_SYSCALL, pid, NULL, NULL);
-        waitpid(pid, &status, 0);
-        if (WIFEXITED(status)) {
-            break;
-        }
-		if (WIFSTOPPED(status)) {
-            int sig = WSTOPSIG(status);
-            //printf("Signal %d reçu\n", sig);
-
-            siginfo_t siginfo;
-            if (ptrace(PTRACE_GETSIGINFO, pid, NULL, &siginfo) < 0) {
-                perror("ptrace GETSIGINFO");
-                exit(1);
-            }
-            if (sig != 5)
-                printf("--- %s {si_signo = %s, si_code = %d, si_pid = %d, si_uid = %d, si_status = %d, si_utime = %ld, si_stime = %ld} ---\n",
-                    g_sig[sig - 1].name, g_sig[sig - 1].name, siginfo.si_code, siginfo.si_pid, siginfo.si_uid, siginfo.si_status, siginfo.si_utime, siginfo.si_stime);
-
-            
-        }
-        if (bits == 64)
-            ptrace(PTRACE_GETREGS, pid, NULL, &regs);
-        else
-        {
-			iov.iov_base = &regs_32;
-            iov.iov_len = sizeof(regs_32);
-            ptrace(PTRACE_GETREGSET, pid, 1, &iov);
+	if (pid > 0)
+	{
+		ptrace(PTRACE_SEIZE, pid, NULL, NULL);
+		ptrace(PTRACE_INTERRUPT, pid, NULL, NULL);
+		waitpid(pid, &status, 0);
+		if (WIFEXITED(status)) {
+			return 0;
 		}
-        if (i % 2 != 0)
-        {
-            if (bits == 64)
-			    print_syscall_64(regs.orig_rax, regs, pid);
-            else
-			    print_syscall_32(regs_32.orig_eax, regs_32, pid);
-        }
-        i++;
-    }
-	printf("exit_group(0) = ?\n+++ exited with 0 +++\n");
+		if (bits == 32)
+			printf("strace: [ Process PID=%d runs in 32 bit mode. ]\n", pid);
+		while (1) {
+			ptrace(PTRACE_SYSCALL, pid, NULL, NULL);
+			waitpid(pid, &status, 0);
+			if (WIFEXITED(status)) {
+				break;
+			}
+			if (WIFSTOPPED(status)) {
+				int sig = WSTOPSIG(status);
+				//printf("Signal %d reçu\n", sig);
+
+				siginfo_t siginfo;
+				if (ptrace(PTRACE_GETSIGINFO, pid, NULL, &siginfo) < 0) {
+					perror("ptrace GETSIGINFO");
+					exit(1);
+				}
+				if (sig != 5)
+					printf("--- %s {si_signo = %s, si_code = %d, si_pid = %d, si_uid = %d, si_status = %d, si_utime = %ld, si_stime = %ld} ---\n",
+						g_sig[sig - 1].name, g_sig[sig - 1].name, siginfo.si_code, siginfo.si_pid, siginfo.si_uid, siginfo.si_status, siginfo.si_utime, siginfo.si_stime);
+
+				
+			}
+			if (bits == 64)
+				ptrace(PTRACE_GETREGS, pid, NULL, &regs);
+			else
+			{
+				iov.iov_base = &regs_32;
+				iov.iov_len = sizeof(regs_32);
+				ptrace(PTRACE_GETREGSET, pid, 1, &iov);
+			}
+			if (i % 2 != 0)
+			{
+				if (bits == 64)
+					print_syscall_64(regs.orig_rax, regs, pid);
+				else if (bits == 32)
+					print_syscall_32(regs_32.orig_eax, regs_32, pid);
+			}
+			i++;
+		}
+		printf("exit_group(0) = ?\n+++ exited with 0 +++\n");
+	}
 	free(chaine);
+	double time_total;
+	time_total = calc_time();
+	print_summarry(time_total);
+	free_summary();
+	fclose(fp);
     return 0;
 }

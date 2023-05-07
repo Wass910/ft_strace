@@ -1,6 +1,7 @@
 #ifndef SYSCALL_H
 # define SYSCALL_H
 
+#include <sys/time.h>
 #include <sys/user.h>
 #include <sys/ptrace.h>
 #include <sys/types.h>
@@ -55,7 +56,7 @@ typedef struct			s_syscall
 	int						code64;
 	int						code32;
 	char					*name;
-	int						arg[6];
+	int						arg[7];
 	int						ret;
 }						t_syscall;
 
@@ -64,6 +65,18 @@ typedef struct			s_sig
 	int						num;
 	char				 	*name;
 }						t_sig;
+
+typedef struct			s_summary
+{
+  int                 arch;
+	int						      number_of_calls;
+  int                 error;
+  double              pourcent_time;
+  double              seconds;
+  long long           usecond;
+	int				 	        syscall;
+  struct s_summary    *next;
+}						t_summary;
 
 
 char			*ft_itoa(unsigned long n, int base);
