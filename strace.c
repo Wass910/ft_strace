@@ -588,10 +588,7 @@ double microseconds_to_seconds(long long microseconds) {
 
 void print_syscall_64(unsigned long sys, struct user_regs_struct regs, int pid)
 {
-	struct timeval start, end;
-    gettimeofday(&start, NULL);
 
-    // Effectuer des opérations ici...
 	if (strncmp("exit_group", g_syscall[sys].name, 10) == 0)
 		return ;
 	if (sys == 59 )
@@ -678,6 +675,32 @@ void print_syscall_64(unsigned long sys, struct user_regs_struct regs, int pid)
 		else
 			printf(") = %d\n", (int)regs.rax );
 	}
+	return ;
+    
+}
+
+void summary_activate(unsigned long sys, struct user_regs_struct regs, int pid)
+{
+	int i = 0;
+	struct timeval start, end;
+    gettimeofday(&start, NULL);
+
+	while (i < 6){
+		if (g_syscall[sys].arg[i] != 0 && i > 0){};
+		if (g_syscall[sys].arg[i] == 1){};
+		if (g_syscall[sys].arg[i] == 2){};
+		if (g_syscall[sys].arg[i] == 3 )
+		{
+			if (sys == SYS_access){};
+		}
+		if (g_syscall[sys].arg[i] == 4)
+		{
+			if (sys == SYS_access){};
+		}
+		if (g_syscall[sys].arg[i] == 5){};
+		i++;
+	}
+
 	gettimeofday(&end, NULL);
     long long elapsed_time = time_in_microseconds(start, end);
     //printf("Le temps écoulé est de %lld microsecondes.\n", elapsed_time);
@@ -702,9 +725,7 @@ void print_syscall_64(unsigned long sys, struct user_regs_struct regs, int pid)
 
 	}
 	return ;
-    
 }
-
 
 void print_syscall_32(unsigned long sys, t_regs_32 regs, int pid)
 {
@@ -858,7 +879,7 @@ void free_summary()
 
 
 
-int main(int argc, char *argv[], char **env) {
+int main(int argc, char **argv, char **env) {
     pid_t pid;
     int status;
     struct user_regs_struct regs;
@@ -870,6 +891,14 @@ int main(int argc, char *argv[], char **env) {
         fprintf(stderr, "Usage: %s <program>\n", argv[0]);
         return 1;
     }
+	int first_arg = 1;
+	g_summary = malloc(sizeof(t_summary));
+	g_summary->on = 0;
+	if (strncmp(argv[1], "-c", 2) == 0&& strlen(argv[1]) == 2)
+	{
+		g_summary->on = 1;
+		first_arg++;
+	}
 
 	int taille_totale = 0;
     for (int i = 1; i < argc; i++) {
@@ -889,12 +918,16 @@ int main(int argc, char *argv[], char **env) {
 	chaine[strlen(chaine) - 2] = ']';
     // Supprimer l'espace final
     chaine[strlen(chaine) - 1] = '\0';
-	const char *binary_path = argv[1];
+	const char *binary_path = NULL;
+	if (g_summary->on == 1)
+		binary_path = argv[2];
+	else
+		binary_path = argv[1];
 
     FILE *fp = fopen(binary_path, "rb");
     if (!fp) {
         fprintf(stderr, "Impossible d'ouvrir le fichier binaire %s.\n", binary_path);
-        return 1;
+        //return 1;
     }
 
     // Lecture de l'en-tête ELF pour déterminer si le binaire est en 32 bits ou en 64 bits
@@ -902,7 +935,7 @@ int main(int argc, char *argv[], char **env) {
     if (fread(&elf_header, sizeof(elf_header), 1, fp) != 1) {
         fprintf(stderr, "Erreur de lecture de l'en-tête ELF.\n");
         fclose(fp);
-        return 1;
+        //return 1;
     }
 
     int bits = 0;
@@ -913,9 +946,8 @@ int main(int argc, char *argv[], char **env) {
     else {
         fprintf(stderr, "Binaire incompatible avec la machine actuelle.\n");
         fclose(fp);
-        return 1;
+        //return 1;
     }
-	g_summary = malloc(sizeof(t_summary));
 	g_summary->arch = bits;
 	g_summary->number_of_calls = 0;
 	g_summary->error = 0;
@@ -933,7 +965,7 @@ int main(int argc, char *argv[], char **env) {
 		// 	str = ft_itoa(regs.rdx, 16);
 		// printf("execve(\"%s\", %s,  0x%s /* 30 vars */) = 0\n", argv[1], chaine, str);
         // execve(argv[1], argv + 1, env);
-		execve(argv[1], argv + 1, env);
+		execve(binary_path, argv + first_arg, env);
 		perror("execve");
 		
         
@@ -981,7 +1013,7 @@ int main(int argc, char *argv[], char **env) {
 					perror("ptrace GETSIGINFO");
 					exit(1);
 				}
-				if (sig != 5)
+				if (sig != 5 && g_summary->on == 0)
 					printf("--- %s {si_signo = %s, si_code = %d, si_pid = %d, si_uid = %d, si_status = %d, si_utime = %ld, si_stime = %ld} ---\n",
 						g_sig[sig - 1].name, g_sig[sig - 1].name, siginfo.si_code, siginfo.si_pid, siginfo.si_uid, siginfo.si_status, siginfo.si_utime, siginfo.si_stime);
 
@@ -997,19 +1029,27 @@ int main(int argc, char *argv[], char **env) {
 			}
 			if (i % 2 != 0)
 			{
-				if (bits == 64)
-					print_syscall_64(regs.orig_rax, regs, pid);
-				else if (bits == 32)
-					print_syscall_32(regs_32.orig_eax, regs_32, pid);
+				if (g_summary->on == 1)
+				{
+					summary_activate(regs.orig_rax, regs, pid);
+				}
+				else {
+					if (bits == 64)
+						print_syscall_64(regs.orig_rax, regs, pid);
+					else if (bits == 32)
+						print_syscall_32(regs_32.orig_eax, regs_32, pid);
+				}
 			}
 			i++;
 		}
-		printf("exit_group(0) = ?\n+++ exited with 0 +++\n");
+		if(g_summary->on == 0)
+			printf("exit_group(0) = ?\n+++ exited with 0 +++\n");
 	}
 	free(chaine);
 	double time_total;
 	time_total = calc_time();
-	//print_summarry(time_total);
+	if(g_summary->on == 1)
+		print_summarry(time_total);
 	free_summary();
 	fclose(fp);
     return 0;

@@ -75,6 +75,8 @@ typedef struct			s_summary
   double              seconds;
   long long           usecond;
 	int				 	        syscall;
+  char                *name;
+  int                 on;
   struct s_summary    *next;
 }						t_summary;
 
