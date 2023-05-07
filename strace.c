@@ -679,7 +679,7 @@ void print_syscall_64(unsigned long sys, struct user_regs_struct regs, int pid)
     
 }
 
-void summary_activate(unsigned long sys, struct user_regs_struct regs, int pid)
+void summary_activate_64(unsigned long sys, struct user_regs_struct regs, int pid)
 {
 	int i = 0;
 	struct timeval start, end;
@@ -705,6 +705,57 @@ void summary_activate(unsigned long sys, struct user_regs_struct regs, int pid)
     long long elapsed_time = time_in_microseconds(start, end);
     //printf("Le temps écoulé est de %lld microsecondes.\n", elapsed_time);
 	if (g_syscall[sys].ret != 5 && (int)regs.rax < 0)
+	{
+		if (check_summary(sys, 1) == 1)
+		{
+			return;
+		}
+		else
+			ft_lstadd_back(&g_summary, ft_fill_summary(1, 1, sys , elapsed_time));
+
+	}
+	else
+	{
+		if (check_summary(sys, 0) == 1)
+		{
+			return ;
+		}
+		else
+			ft_lstadd_back(&g_summary, ft_fill_summary(1, 0, sys, elapsed_time));
+
+	}
+	return ;
+}
+
+void summary_activate_32(unsigned long sys, t_regs_32 regs, int pid)
+{
+	int i = 0;
+	int count = 0;
+    while (g_syscall[count].code32 && g_syscall[count].code32 != sys )
+        count++;
+	struct timeval start, end;
+    gettimeofday(&start, NULL);
+
+	while (i < 6){
+		if (g_syscall[count].arg[i] != 0 && i > 0){};
+		if (g_syscall[count].arg[i] == 1){};
+		if (g_syscall[count].arg[i] == 2){};
+		if (g_syscall[count].arg[i] == 3 )
+		{
+			if (sys == SYS_access){};
+		}
+		if (g_syscall[count].arg[i] == 4)
+		{
+			if (sys == SYS_access){};
+		}
+		if (g_syscall[count].arg[i] == 5){};
+		i++;
+	}
+
+	gettimeofday(&end, NULL);
+    long long elapsed_time = time_in_microseconds(start, end);
+    //printf("Le temps écoulé est de %lld microsecondes.\n", elapsed_time);
+	if (g_syscall[count].ret != 5 && (int)regs.eax < 0)
 	{
 		if (check_summary(sys, 1) == 1)
 		{
@@ -854,7 +905,14 @@ void print_summarry(double time)
 			printf("          ");
 		else
 			printf("%10d", tmp->error);
-		printf(" %d\n", tmp->syscall);
+		if (g_summary->arch == 64)
+			printf(" %s\n", g_syscall[tmp->syscall].name);
+		else{
+			int count = 0;
+			while (g_syscall[count].code32 && g_syscall[count].code32 != tmp->syscall )
+				count++;
+			printf(" %s\n", g_syscall[count].name);
+		}
 		syscall_total = syscall_total + tmp->number_of_calls;
 		error_total = error_total + tmp->error;
 		tmp = tmp->next;
@@ -996,7 +1054,7 @@ int main(int argc, char **argv, char **env) {
 		if (WIFEXITED(status)) {
 			return 0;
 		}
-		if (bits == 32)
+		if (bits == 32 && g_summary->on == 0)
 			printf("strace: [ Process PID=%d runs in 32 bit mode. ]\n", pid);
 		while (1) {
 			ptrace(PTRACE_SYSCALL, pid, NULL, NULL);
@@ -1031,7 +1089,10 @@ int main(int argc, char **argv, char **env) {
 			{
 				if (g_summary->on == 1)
 				{
-					summary_activate(regs.orig_rax, regs, pid);
+					if (bits == 64)
+						summary_activate_64(regs.orig_rax, regs, pid);
+					else if (bits == 32)
+						summary_activate_32(regs_32.orig_eax, regs_32, pid);
 				}
 				else {
 					if (bits == 64)
